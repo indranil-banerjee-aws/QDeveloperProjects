@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  MSK to DynamoDB Processor
+  
+  SAM Template for processing Kafka messages from MSK and storing them in DynamoDB
+
+Parameters:
+  MSKClusterArn:
+    Type: String
+    Description: ARN of the MSK Cluster to use as event source
+    
+  KafkaTopicName:
+    Type: String
+    Description: Name of the Kafka topic to consume messages from
+    
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name (dev, test, prod)
+    
+  DynamoDBTableName:
+    Type: String
+    Default: PersonData
+    Description: Name of the DynamoDB table to store person data
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Tracing: Active
+    Environment:
+      Variables:
+        POWERTOOLS_SERVICE_NAME: msk-dynamodb-processor
+        POWERTOOLS_METRICS_NAMESPACE: MSKDynamoDBProcessor
+        LOG_LEVEL: INFO
+        DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
+
+Resources:
+  # DynamoDB Table to store person data
+  PersonDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoDBTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Lambda Function
+  MSKProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: com.example.processor.MSKProcessor::handleRequest
+      Runtime: java11
+      Architectures:
+        - x86_64
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PersonDataTable
+        - CloudWatchLambdaInsightsExecutionRolePolicy
+        - Statement:
+            - Effect: Allow
+              Action:
+                - kafka-cluster:Connect
+                - kafka-cluster:DescribeGroup
+                - kafka-cluster:AlterGroup
+                - kafka-cluster:DescribeTopic
+                - kafka-cluster:ReadData
+                - kafka-cluster:DescribeClusterDynamicConfiguration
+              Resource: '*'
+      Events:
+        MSKEvent:
+          Type: MSK
+          Properties:
+            StartingPosition: LATEST
+            Stream: !Ref MSKClusterArn
+            Topics:
+              - !Ref KafkaTopicName
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+      Tracing: Active
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14
+
+  # CloudWatch Log Group for Lambda
+  MSKProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${MSKProcessorFunction}
+      RetentionInDays: 30
+
+Outputs:
+  MSKProcessorFunction:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt MSKProcessorFunction.Arn
+    
+  PersonDataTable:
+    Description: "DynamoDB Table Name"
+    Value: !Ref PersonDataTable
+    
+  PersonDataTableArn:
+    Description: "DynamoDB Table ARN"
+    Value: !GetAtt PersonDataTable.Arn

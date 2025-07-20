@@ -1,0 +1,27 @@
+{
+  "eventSource": "aws:kafka",
+  "eventSourceArn": "arn:aws:kafka:us-east-1:123456789012:cluster/MSKEnvironment-MSKCluster/abcdefghijklmnopqrstuvwxyz",
+  "bootstrapServers": "b-1.mskenvironment-mskclus.abcdef.c1.kafka.us-east-1.amazonaws.com:9098,b-2.mskenvironment-mskclus.abcdef.c1.kafka.us-east-1.amazonaws.com:9098,b-3.mskenvironment-mskclus.abcdef.c1.kafka.us-east-1.amazonaws.com:9098",
+  "records": {
+    "my-kafka-topic-0": [
+      {
+        "topic": "my-kafka-topic",
+        "partition": 0,
+        "offset": 0,
+        "timestamp": 1689778800000,
+        "timestampType": "CREATE_TIME",
+        "key": "dGVzdC1iYXRjaC0w",
+        "value": "eyJGaXJzdG5hbWUiOiJKb2huIiwiTGFzdG5hbWUiOiJEb2UiLCJTdHJlZXRBZGRyZXNzIjoiMTIzIE1haW4gU3QiLCJDaXR5IjoiQW55dG93biIsIlN0YXRlIjoiQ0EiLCJDb3VudHkiOiJBbnkgQ291bnR5IiwiWmlwQ29kZSI6IjEyMzQ1IiwiUGhvbmVOdW1iZXIiOiI1NTUtMTIzLTQ1NjciLCJFbWFpbEFkZHJlc3MiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsIkVtcGxveWVyTmFtZSI6IkFDTUUgSW5jIiwiRW1wbG95ZXJBZGRyZXNzIjoiNDU2IEJ1c2luZXNzIEF2ZSIsIkVtcGxveWVyUGhvbmVOdW1iZXIiOiI1NTUtOTg3LTY1NDMiLCJFbXBsb3llcldlYnNpdGUiOiJ3d3cuYWNtZS5jb20ifQ=="
+      },
+      {
+        "topic": "my-kafka-topic",
+        "partition": 0,
+        "offset": 1,
+        "timestamp": 1689778801000,
+        "timestampType": "CREATE_TIME",
+        "key": "dGVzdC1iYXRjaC0x",
+        "value": "eyJGaXJzdG5hbWUiOiJKYW5lIiwiTGFzdG5hbWUiOiJTbWl0aCIsIlN0cmVldEFkZHJlc3MiOiI3ODkgT2FrIFN0IiwiQ2l0eSI6Ik90aGVydG93biIsIlN0YXRlIjoiTlkiLCJDb3VudHkiOiJPdGhlciBDb3VudHkiLCJaaXBDb2RlIjoiNjc4OTAiLCJQaG9uZU51bWJlciI6IjU1NS05ODctNjU0MyIsIkVtYWlsQWRkcmVzcyI6ImphbmUuc21pdGhAZXhhbXBsZS5jb20iLCJFbXBsb3llck5hbWUiOiJYWVogQ29ycCIsIkVtcGxveWVyQWRkcmVzcyI6IjMyMSBDb3Jwb3JhdGUgQmx2ZCIsIkVtcGxveWVyUGhvbmVOdW1iZXIiOiI1NTUtMTIzLTQ1NjciLCJFbXBsb3llcldlYnNpdGUiOiJ3d3cueHl6LmNvbSJ9"
+      }
+    ]
+  }
+}

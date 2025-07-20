@@ -1,0 +1,22 @@
+# Kafka Producer Configuration
+
+# Bootstrap servers (replace with your MSK bootstrap servers)
+bootstrap.servers=BOOTSTRAP_SERVERS_PLACEHOLDER
+
+# MSK IAM Authentication
+security.protocol=SASL_SSL
+sasl.mechanism=AWS_MSK_IAM
+sasl.jaas.config=software.amazon.msk.auth.iam.IAMLoginModule required;
+sasl.client.callback.handler.class=software.amazon.msk.auth.iam.IAMClientCallbackHandler
+
+# Producer specific settings
+key.serializer=org.apache.kafka.common.serialization.StringSerializer
+value.serializer=org.apache.kafka.common.serialization.StringSerializer
+acks=all
+retries=3
+batch.size=16384
+linger.ms=1
+buffer.memory=33554432
+
+# Idempotence for exactly-once semantics
+enable.idempotence=true
