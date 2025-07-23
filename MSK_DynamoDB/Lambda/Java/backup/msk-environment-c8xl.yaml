@@ -25,11 +25,6 @@ Parameters:
     Type: String
     Default: https://github.com/yourusername/msk-dynamodb-project.git
     
-  GitHubProjectPath:
-    Description: Path to the project within the GitHub repository
-    Type: String
-    Default: MSK_DynamoDB/Lambda/Java
-    
   SetupScriptS3Bucket:
     Description: S3 bucket containing the setup script
     Type: String
@@ -345,18 +340,10 @@ Resources:
           unzip awscliv2.zip
           ./aws/install
           
-          # Download setup script and substitute parameter values
-          aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /home/ec2-user/setup-script.sh
-          
-          # Replace placeholders with actual parameter values
-          sed -i 's/STACK_NAME_PLACEHOLDER/${AWS::StackName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's/KAFKA_TOPIC_NAME_PLACEHOLDER/${KafkaTopicName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_REPO_URL_PLACEHOLDER|${GitHubRepoURL}|g' /home/ec2-user/setup-script.sh
-          sed -i 's/AWS_REGION_PLACEHOLDER/${AWS::Region}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_PROJECT_PATH_PLACEHOLDER|${GitHubProjectPath}|g' /home/ec2-user/setup-script.sh
-          
-          chmod +x /home/ec2-user/setup-script.sh
-          /home/ec2-user/setup-script.sh
+          # Download and run setup script
+          aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /tmp/setup-script.sh
+          chmod +x /tmp/setup-script.sh
+          /tmp/setup-script.sh ${AWS::StackName} ${KafkaTopicName} ${GitHubRepoURL} ${AWS::Region}
           
           # Signal completion
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2InstanceProvisioned --region ${AWS::Region}
@@ -410,18 +397,10 @@ Resources:
           unzip awscliv2.zip
           ./aws/install
           
-          # Download setup script and substitute parameter values
-          aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /home/ec2-user/setup-script.sh
-          
-          # Replace placeholders with actual parameter values
-          sed -i 's/STACK_NAME_PLACEHOLDER/${AWS::StackName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's/KAFKA_TOPIC_NAME_PLACEHOLDER/${KafkaTopicName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_REPO_URL_PLACEHOLDER|${GitHubRepoURL}|g' /home/ec2-user/setup-script.sh
-          sed -i 's/AWS_REGION_PLACEHOLDER/${AWS::Region}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_PROJECT_PATH_PLACEHOLDER|${GitHubProjectPath}|g' /home/ec2-user/setup-script.sh
-          
-          chmod +x /home/ec2-user/setup-script.sh
-          /home/ec2-user/setup-script.sh
+          # Download and run setup script
+          aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /tmp/setup-script.sh
+          chmod +x /tmp/setup-script.sh
+          /tmp/setup-script.sh ${AWS::StackName} ${KafkaTopicName} ${GitHubRepoURL} ${AWS::Region}
           
           # Signal completion
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2InstanceServerless --region ${AWS::Region}

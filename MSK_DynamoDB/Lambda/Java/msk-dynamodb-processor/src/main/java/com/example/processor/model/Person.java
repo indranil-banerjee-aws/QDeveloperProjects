@@ -17,7 +17,6 @@ public class Person {
     private String streetAddress;
     private String city;
     private String state;
-    private String county;
     private String zipCode;
     private String phoneNumber;
     private String emailAddress;
@@ -85,15 +84,6 @@ public class Person {
 
     public void setState(String state) {
         this.state = state;
-    }
-
-    @JsonProperty("County")
-    public String getCounty() {
-        return county;
-    }
-
-    public void setCounty(String county) {
-        this.county = county;
     }
 
     @JsonProperty("ZipCode")
@@ -181,9 +171,18 @@ public class Person {
                 "id='" + id + '\'' +
                 ", firstName='" + firstName + '\'' +
                 ", lastName='" + lastName + '\'' +
+                ", streetAddress='" + streetAddress + '\'' +
+                ", city='" + city + '\'' +
+                ", state='" + state + '\'' +
+                ", zipCode='" + zipCode + '\'' +
+                ", phoneNumber='" + phoneNumber + '\'' +
                 ", emailAddress='" + emailAddress + '\'' +
                 ", employerName='" + employerName + '\'' +
+                ", employerAddress='" + employerAddress + '\'' +
+                ", employerPhoneNumber='" + employerPhoneNumber + '\'' +
+                ", employerWebsite='" + employerWebsite + '\'' +
                 ", batchId='" + batchId + '\'' +
+                ", processedTimestamp='" + processedTimestamp + '\'' +
                 '}';
     }
 }

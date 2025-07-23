@@ -11,7 +11,6 @@ public class Person {
     private String streetAddress;
     private String city;
     private String state;
-    private String county;
     private String zipCode;
     private String phoneNumber;
     private String emailAddress;
@@ -26,7 +25,7 @@ public class Person {
 
     // Constructor with all fields
     public Person(String firstName, String lastName, String streetAddress, String city,
-                  String state, String county, String zipCode, String phoneNumber,
+                  String state, String zipCode, String phoneNumber,
                   String emailAddress, String employerName, String employerAddress,
                   String employerPhoneNumber, String employerWebsite) {
         this.firstName = firstName;
@@ -34,7 +33,6 @@ public class Person {
         this.streetAddress = streetAddress;
         this.city = city;
         this.state = state;
-        this.county = county;
         this.zipCode = zipCode;
         this.phoneNumber = phoneNumber;
         this.emailAddress = emailAddress;
@@ -88,15 +86,6 @@ public class Person {
 
     public void setState(String state) {
         this.state = state;
-    }
-
-    @JsonProperty("County")
-    public String getCounty() {
-        return county;
-    }
-
-    public void setCounty(String county) {
-        this.county = county;
     }
 
     @JsonProperty("ZipCode")
@@ -170,7 +159,6 @@ public class Person {
                 ", streetAddress='" + streetAddress + '\'' +
                 ", city='" + city + '\'' +
                 ", state='" + state + '\'' +
-                ", county='" + county + '\'' +
                 ", zipCode='" + zipCode + '\'' +
                 ", phoneNumber='" + phoneNumber + '\'' +
                 ", emailAddress='" + emailAddress + '\'' +

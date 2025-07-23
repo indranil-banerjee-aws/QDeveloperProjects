@@ -345,18 +345,10 @@ Resources:
           unzip awscliv2.zip
           ./aws/install
           
-          # Download setup script and substitute parameter values
+          # Download and run setup script
           aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /home/ec2-user/setup-script.sh
-          
-          # Replace placeholders with actual parameter values
-          sed -i 's/STACK_NAME_PLACEHOLDER/${AWS::StackName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's/KAFKA_TOPIC_NAME_PLACEHOLDER/${KafkaTopicName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_REPO_URL_PLACEHOLDER|${GitHubRepoURL}|g' /home/ec2-user/setup-script.sh
-          sed -i 's/AWS_REGION_PLACEHOLDER/${AWS::Region}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_PROJECT_PATH_PLACEHOLDER|${GitHubProjectPath}|g' /home/ec2-user/setup-script.sh
-          
           chmod +x /home/ec2-user/setup-script.sh
-          /home/ec2-user/setup-script.sh
+          /home/ec2-user/setup-script.sh ${AWS::StackName} ${KafkaTopicName} ${GitHubRepoURL} ${AWS::Region} ${GitHubProjectPath}
           
           # Signal completion
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2InstanceProvisioned --region ${AWS::Region}
@@ -410,18 +402,10 @@ Resources:
           unzip awscliv2.zip
           ./aws/install
           
-          # Download setup script and substitute parameter values
+          # Download and run setup script
           aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /home/ec2-user/setup-script.sh
-          
-          # Replace placeholders with actual parameter values
-          sed -i 's/STACK_NAME_PLACEHOLDER/${AWS::StackName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's/KAFKA_TOPIC_NAME_PLACEHOLDER/${KafkaTopicName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_REPO_URL_PLACEHOLDER|${GitHubRepoURL}|g' /home/ec2-user/setup-script.sh
-          sed -i 's/AWS_REGION_PLACEHOLDER/${AWS::Region}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_PROJECT_PATH_PLACEHOLDER|${GitHubProjectPath}|g' /home/ec2-user/setup-script.sh
-          
           chmod +x /home/ec2-user/setup-script.sh
-          /home/ec2-user/setup-script.sh
+          /home/ec2-user/setup-script.sh ${AWS::StackName} ${KafkaTopicName} ${GitHubRepoURL} ${AWS::Region} ${GitHubProjectPath}
           
           # Signal completion
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2InstanceServerless --region ${AWS::Region}

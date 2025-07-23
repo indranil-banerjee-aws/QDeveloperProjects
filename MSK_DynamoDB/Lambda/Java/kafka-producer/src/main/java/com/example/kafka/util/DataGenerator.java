@@ -27,7 +27,6 @@ public class DataGenerator {
         String streetAddress = faker.address().streetAddress();
         String city = faker.address().city();
         String state = faker.address().state();
-        String county = faker.address().county();
         String zipCode = faker.address().zipCode();
         String phoneNumber = faker.phoneNumber().phoneNumber();
         String emailAddress = firstName.toLowerCase() + "." + lastName.toLowerCase() + "@" + faker.internet().domainName();
@@ -44,7 +43,6 @@ public class DataGenerator {
                 streetAddress,
                 city,
                 state,
-                county,
                 zipCode,
                 phoneNumber,
                 emailAddress,

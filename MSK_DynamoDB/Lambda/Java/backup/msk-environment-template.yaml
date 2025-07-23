@@ -1,0 +1,726 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for VPC, EC2 with Amazon Linux 2023 and Amazon Kiro Web Version, and MSK Cluster'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name prefix for resources
+    Type: String
+    Default: MSKEnvironment
+
+  KafkaTopicName:
+    Description: Name of the Kafka topic to create
+    Type: String
+    Default: my-kafka-topic
+    
+  GitHubRepoURL:
+    Description: URL of the GitHub repository to clone (e.g., https://github.com/username/repo.git)
+    Type: String
+    Default: ""
+    
+  GitHubRepoBranch:
+    Description: Branch of the GitHub repository to clone
+    Type: String
+    Default: "main"
+
+  VpcCIDR:
+    Description: CIDR block for the VPC
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: CIDR block for Public Subnet 1
+    Type: String
+    Default: 10.0.0.0/24
+
+  PublicSubnet2CIDR:
+    Description: CIDR block for Public Subnet 2
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet3CIDR:
+    Description: CIDR block for Public Subnet 3
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateSubnet1CIDR:
+    Description: CIDR block for Private Subnet 1
+    Type: String
+    Default: 10.0.3.0/24
+
+  PrivateSubnet2CIDR:
+    Description: CIDR block for Private Subnet 2
+    Type: String
+    Default: 10.0.4.0/24
+
+  PrivateSubnet3CIDR:
+    Description: CIDR block for Private Subnet 3
+    Type: String
+    Default: 10.0.5.0/24
+
+  EC2InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t3.large
+    AllowedValues:
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - m5.large
+      - m5.xlarge
+
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance (optional)
+    Type: String
+    Default: ""
+
+  MSKClusterType:
+    Description: Type of MSK Cluster to deploy
+    Type: String
+    Default: Provisioned
+    AllowedValues:
+      - Provisioned
+      - Serverless
+
+  MSKKafkaVersion:
+    Description: Apache Kafka version for MSK Cluster (only used for Provisioned)
+    Type: String
+    Default: 3.5.1
+    AllowedValues:
+      - 2.8.1
+      - 3.3.2
+      - 3.4.0
+      - 3.5.1
+
+  MSKInstanceType:
+    Description: Instance type for MSK brokers (only used for Provisioned)
+    Type: String
+    Default: kafka.m5.large
+    AllowedValues:
+      - kafka.t3.small
+      - kafka.m5.large
+      - kafka.m5.xlarge
+      - kafka.m5.2xlarge
+
+Conditions:
+  IsProvisioned: !Equals [!Ref MSKClusterType, 'Provisioned']
+  IsServerless: !Equals [!Ref MSKClusterType, 'Serverless']
+  HasKeyPair: !Not [!Equals [!Ref KeyPairName, '']]
+
+Resources:
+  # VPC and Networking Resources
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-IGW
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PublicSubnet2
+
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet3CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PublicSubnet3
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PrivateSubnet1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PrivateSubnet2
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet3CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PrivateSubnet3
+
+  # NAT Gateway for Private Subnets
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-NatGateway
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet3
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PrivateRouteTable
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet3
+
+  # Security Groups
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EC2 instance
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: Allow SSH access
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTPS access for Kiro Web
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2SecurityGroup
+
+  MSKSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for MSK Cluster
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-MSKSecurityGroup
+
+  MSKSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref MSKSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9098
+      ToPort: 9098
+      SourceSecurityGroupId: !Ref EC2SecurityGroup
+      Description: Allow Kafka access from EC2 instances (IAM auth)
+
+  # IAM Role for EC2 Instance
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonMSKFullAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AWSLambda_FullAccess
+      Policies:
+        - PolicyName: MSKIAMAuth
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kafka-cluster:Connect
+                  - kafka-cluster:AlterCluster
+                  - kafka-cluster:DescribeCluster
+                  - kafka-cluster:*Topic*
+                  - kafka-cluster:WriteData
+                  - kafka-cluster:ReadData
+                  - kafka-cluster:*Group*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2-instance-connect:SendSSHPublicKey
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:AttachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:PassRole
+                Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2InstanceRole
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2InstanceRole
+
+  # EC2 Instance with Amazon Linux 2023 and Amazon Kiro Web
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: 
+      - !If [IsProvisioned, MSKCluster, MSKServerlessCluster]
+    Properties:
+      InstanceType: !Ref EC2InstanceType
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AL2023AMI]
+      KeyName: !If [HasKeyPair, !Ref KeyPairName, !Ref 'AWS::NoValue']
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref EC2SecurityGroup
+          SubnetId: !Ref PublicSubnet1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          
+          # Update system packages
+          dnf update -y
+          
+          # Install Amazon Kiro Web Version
+          amazon-linux-extras install -y kiro-web
+          
+          # Install required packages
+          dnf install -y nmap-ncat git jq
+          
+          # Install AWS CLI v2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          dnf install -y unzip
+          unzip awscliv2.zip
+          ./aws/install
+          
+          # Install Docker
+          dnf install -y docker
+          systemctl enable docker
+          systemctl start docker
+          
+          # Install latest Amazon Corretto Java
+          dnf install -y java-17-amazon-corretto-devel
+          
+          # Install Maven
+          dnf install -y maven
+          
+          # Install AWS SAM CLI
+          pip3 install aws-sam-cli
+          
+          # Install Kafka client
+          mkdir -p /opt/kafka
+          cd /opt/kafka
+          curl -O https://downloads.apache.org/kafka/3.5.1/kafka_2.13-3.5.1.tgz
+          tar -xzf kafka_2.13-3.5.1.tgz --strip 1
+          rm kafka_2.13-3.5.1.tgz
+          
+          # Download and install the Amazon MSK IAM JAR
+          mkdir -p /opt/kafka/libs/
+          curl -O https://github.com/aws/aws-msk-iam-auth/releases/download/v1.1.6/aws-msk-iam-auth-1.1.6-all.jar
+          cp aws-msk-iam-auth-1.1.6-all.jar /opt/kafka/libs/
+          
+          # Create client.properties file for IAM authentication
+          cat > /opt/kafka/config/client.properties << 'EOL'
+          security.protocol=SASL_SSL
+          sasl.mechanism=AWS_MSK_IAM
+          sasl.jaas.config=software.amazon.msk.auth.iam.IAMLoginModule required;
+          sasl.client.callback.handler.class=software.amazon.msk.auth.iam.IAMClientCallbackHandler
+          EOL
+          
+          # Get MSK bootstrap servers
+          REGION="${AWS::Region}"
+          
+          # Different commands based on MSK cluster type
+          if [ "${MSKClusterType}" = "Provisioned" ]; then
+            MSK_CLUSTER_ARN="${MSKCluster}"
+            BOOTSTRAP_SERVERS=$(aws kafka get-bootstrap-brokers --cluster-arn $MSK_CLUSTER_ARN --region $REGION --query 'BootstrapBrokerStringSaslIam' --output text)
+          else
+            MSK_CLUSTER_ARN="${MSKServerlessCluster}"
+            BOOTSTRAP_SERVERS=$(aws kafka get-bootstrap-brokers --cluster-arn $MSK_CLUSTER_ARN --region $REGION --query 'BootstrapBrokerStringVpcConnectivitySaslIam' --output text)
+          fi
+          
+          # Save bootstrap servers to a file for easy access
+          echo "export BOOTSTRAP_SERVERS=$BOOTSTRAP_SERVERS" > /etc/profile.d/kafka-env.sh
+          echo "export MSK_CLUSTER_ARN=$MSK_CLUSTER_ARN" >> /etc/profile.d/kafka-env.sh
+          echo "export KAFKA_TOPIC_NAME=${KafkaTopicName}" >> /etc/profile.d/kafka-env.sh
+          
+          # Create a topic creation script
+          cat > /home/ec2-user/create-kafka-topic.sh << 'EOL'
+          #!/bin/bash
+          source /etc/profile.d/kafka-env.sh
+          
+          # Check if topic already exists
+          TOPIC_EXISTS=$(/opt/kafka/bin/kafka-topics.sh --bootstrap-server $BOOTSTRAP_SERVERS --command-config /opt/kafka/config/client.properties --list | grep "^$KAFKA_TOPIC_NAME$")
+          
+          if [ -z "$TOPIC_EXISTS" ]; then
+            echo "Creating Kafka topic: $KAFKA_TOPIC_NAME"
+            /opt/kafka/bin/kafka-topics.sh --create --topic $KAFKA_TOPIC_NAME --bootstrap-server $BOOTSTRAP_SERVERS --command-config /opt/kafka/config/client.properties --partitions 3 --replication-factor 3
+            
+            if [ $? -eq 0 ]; then
+              echo "Topic $KAFKA_TOPIC_NAME created successfully"
+            else
+              echo "Failed to create topic $KAFKA_TOPIC_NAME"
+              exit 1
+            fi
+          else
+            echo "Topic $KAFKA_TOPIC_NAME already exists"
+          fi
+          
+          # Describe the topic to verify
+          echo "Topic details:"
+          /opt/kafka/bin/kafka-topics.sh --describe --topic $KAFKA_TOPIC_NAME --bootstrap-server $BOOTSTRAP_SERVERS --command-config /opt/kafka/config/client.properties
+          EOL
+          
+          chmod +x /home/ec2-user/create-kafka-topic.sh
+          chown ec2-user:ec2-user /home/ec2-user/create-kafka-topic.sh
+          
+          # Execute the topic creation script
+          sudo -u ec2-user /home/ec2-user/create-kafka-topic.sh > /home/ec2-user/topic-creation-result.log 2>&1
+          
+          # Clone GitHub repository if URL is provided
+          if [ ! -z "${GitHubRepoURL}" ]; then
+            echo "Cloning GitHub repository: ${GitHubRepoURL}, branch: ${GitHubRepoBranch}"
+            
+            # Create project directory
+            mkdir -p /home/ec2-user/project
+            chown ec2-user:ec2-user /home/ec2-user/project
+            
+            # Clone the repository
+            cd /home/ec2-user/project
+            sudo -u ec2-user git clone -b ${GitHubRepoBranch} ${GitHubRepoURL} .
+            
+            if [ $? -eq 0 ]; then
+              echo "Repository cloned successfully"
+              
+              # Create configuration file for the SAM application
+              cat > /home/ec2-user/project/msk-dynamodb-processor/samconfig.toml << EOL
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "msk-dynamodb-processor"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-EXAMPLE"
+s3_prefix = "msk-dynamodb-processor"
+region = "${AWS::Region}"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "MSKClusterArn=\"${MSK_CLUSTER_ARN}\" KafkaTopicName=\"${KAFKA_TOPIC_NAME}\" Environment=\"dev\" DynamoDBTableName=\"PersonData\""
+image_repositories = []
+EOL
+              chown ec2-user:ec2-user /home/ec2-user/project/msk-dynamodb-processor/samconfig.toml
+              
+              # Update Kafka producer properties file
+              cat > /home/ec2-user/project/kafka-producer/kafka-client.properties << EOL
+# Kafka Producer Configuration
+
+# Bootstrap servers
+bootstrap.servers=$BOOTSTRAP_SERVERS
+
+# MSK IAM Authentication
+security.protocol=SASL_SSL
+sasl.mechanism=AWS_MSK_IAM
+sasl.jaas.config=software.amazon.msk.auth.iam.IAMLoginModule required;
+sasl.client.callback.handler.class=software.amazon.msk.auth.iam.IAMClientCallbackHandler
+
+# Producer specific settings
+key.serializer=org.apache.kafka.common.serialization.StringSerializer
+value.serializer=org.apache.kafka.common.serialization.StringSerializer
+acks=all
+retries=3
+batch.size=16384
+linger.ms=1
+buffer.memory=33554432
+
+# Idempotence for exactly-once semantics
+enable.idempotence=true
+EOL
+              chown ec2-user:ec2-user /home/ec2-user/project/kafka-producer/kafka-client.properties
+              
+              # Create a setup script for the user
+              cat > /home/ec2-user/setup-project.sh << 'EOL'
+#!/bin/bash
+
+source /etc/profile.d/kafka-env.sh
+
+echo "===== MSK DynamoDB Project Setup ====="
+echo "Bootstrap Servers: $BOOTSTRAP_SERVERS"
+echo "MSK Cluster ARN: $MSK_CLUSTER_ARN"
+echo "Kafka Topic: $KAFKA_TOPIC_NAME"
+echo "======================================"
+
+echo -e "\n1. Building Kafka Producer"
+cd ~/project/kafka-producer
+mvn clean package
+
+echo -e "\n2. Building and Deploying SAM Application"
+cd ~/project/msk-dynamodb-processor
+sam build
+echo "To deploy the SAM application, run: sam deploy --guided"
+
+echo -e "\n3. Running Kafka Producer"
+echo "To send messages to Kafka, run:"
+echo "cd ~/project/kafka-producer"
+echo "./build-and-run.sh $KAFKA_TOPIC_NAME 10 test-batch"
+
+echo -e "\nSetup complete!"
+EOL
+              chmod +x /home/ec2-user/setup-project.sh
+              chown ec2-user:ec2-user /home/ec2-user/setup-project.sh
+              
+              echo "Project setup completed successfully"
+            else
+              echo "Failed to clone repository"
+            fi
+          fi
+          
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2Instance
+
+  # MSK Cluster - Provisioned or Serverless based on parameter
+  MSKCluster:
+    Type: AWS::MSK::Cluster
+    Condition: IsProvisioned
+    Properties:
+      ClusterName: !Sub ${EnvironmentName}-MSKCluster
+      KafkaVersion: !Ref MSKKafkaVersion
+      NumberOfBrokerNodes: 3
+      BrokerNodeGroupInfo:
+        InstanceType: !Ref MSKInstanceType
+        ClientSubnets:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+          - !Ref PrivateSubnet3
+        SecurityGroups:
+          - !Ref MSKSecurityGroup
+        StorageInfo:
+          EBSStorageInfo:
+            VolumeSize: 100
+      EncryptionInfo:
+        EncryptionInTransit:
+          ClientBroker: TLS
+          InCluster: true
+      ClientAuthentication:
+        Sasl:
+          Iam:
+            Enabled: true
+      LoggingInfo:
+        BrokerLogs:
+          CloudWatchLogs:
+            Enabled: true
+            LogGroup: !Ref MSKLogGroup
+      Tags:
+        Name: !Sub ${EnvironmentName}-MSKCluster
+
+  MSKServerlessCluster:
+    Type: AWS::MSK::ServerlessCluster
+    Condition: IsServerless
+    Properties:
+      ClusterName: !Sub ${EnvironmentName}-MSKServerlessCluster
+      ClientAuthentication:
+        Sasl:
+          Iam:
+            Enabled: true
+      VpcConfigs:
+        - SubnetIds:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+            - !Ref PrivateSubnet3
+          SecurityGroups:
+            - !Ref MSKSecurityGroup
+      Tags:
+        Name: !Sub ${EnvironmentName}-MSKServerlessCluster
+
+  MSKLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/msk/${EnvironmentName}-MSKCluster
+      RetentionInDays: 7
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AL2023AMI: ami-0e731c8a588258d0d
+    us-east-2:
+      AL2023AMI: ami-0c20d96b50d7c2b86
+    us-west-1:
+      AL2023AMI: ami-0487d9aa86829b2dc
+    us-west-2:
+      AL2023AMI: ami-0b75987f3a60d7e0d
+    eu-west-1:
+      AL2023AMI: ami-0e309a5f3a6dd97ea
+    eu-central-1:
+      AL2023AMI: ami-0faab3a2bd4dae9b6
+    ap-northeast-1:
+      AL2023AMI: ami-0f8048fa3e5717b09
+    ap-northeast-2:
+      AL2023AMI: ami-0a3d9f6a2a6ba309c
+    ap-southeast-1:
+      AL2023AMI: ami-0fa377108253bf620
+    ap-southeast-2:
+      AL2023AMI: ami-04f5097681773b989
+    sa-east-1:
+      AL2023AMI: ami-0fb4cf3a99aa89f72
+
+Outputs:
+  VPC:
+    Description: VPC ID
+    Value: !Ref VPC
+
+  PublicSubnets:
+    Description: List of Public Subnet IDs
+    Value: !Join [',', [!Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3]]
+
+  PrivateSubnets:
+    Description: List of Private Subnet IDs
+    Value: !Join [',', [!Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3]]
+
+  EC2InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref EC2Instance
+
+  EC2PublicIP:
+    Description: Public IP of EC2 Instance
+    Value: !GetAtt EC2Instance.PublicIp
+
+  EC2PublicDNS:
+    Description: Public DNS of EC2 Instance
+    Value: !GetAtt EC2Instance.PublicDnsName
+
+  MSKClusterArn:
+    Description: MSK Cluster ARN
+    Value: !If [IsProvisioned, !Ref MSKCluster, !Ref MSKServerlessCluster]
+
+  MSKClusterType:
+    Description: Type of MSK Cluster deployed
+    Value: !Ref MSKClusterType
+    
+  KafkaTopicName:
+    Description: Name of the Kafka topic created
+    Value: !Ref KafkaTopicName
+    
+  BootstrapServers:
+    Description: MSK Bootstrap Servers (IAM authentication)
+    Value: !If [IsProvisioned, !GetAtt MSKCluster.BootstrapBrokerStringSaslIam, !GetAtt MSKServerlessCluster.BootstrapBrokerStringVpcConnectivitySaslIam]
+    
+  SetupInstructions:
+    Description: Instructions to set up the project
+    Value: !Sub "Connect to the EC2 instance using EC2 Instance Connect or SSH, then run: /home/ec2-user/setup-project.sh"

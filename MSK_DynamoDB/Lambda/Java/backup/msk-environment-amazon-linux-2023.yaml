@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'MSK to DynamoDB Environment - Using c6a.8xlarge with Amazon Linux 2023'
+Description: 'MSK to DynamoDB Environment - Using S3 for Setup Script with Amazon Linux 2023'
 
 Parameters:
   EnvironmentName:
@@ -25,11 +25,6 @@ Parameters:
     Type: String
     Default: https://github.com/yourusername/msk-dynamodb-project.git
     
-  GitHubProjectPath:
-    Description: Path to the project within the GitHub repository
-    Type: String
-    Default: MSK_DynamoDB/Lambda/Java
-    
   SetupScriptS3Bucket:
     Description: S3 bucket containing the setup script
     Type: String
@@ -43,33 +38,33 @@ Mappings:
   # Updated Amazon Linux 2023 AMI IDs as of July 2023
   RegionMap:
     us-east-1:
-      AMI: ami-05c13eab67c5d8861 # Amazon Linux 2023
+      AMI: ami-05c13eab67c5d8861 # Amazon Linux 2023 (July 2023)
     us-east-2:
-      AMI: ami-0e0bf53f6def86294 # Amazon Linux 2023
+      AMI: ami-0e0bf53f6def86294 # Amazon Linux 2023 (July 2023)
     us-west-1:
-      AMI: ami-0ce2cb35386fc22e9 # Amazon Linux 2023
+      AMI: ami-0ce2cb35386fc22e9 # Amazon Linux 2023 (July 2023)
     us-west-2:
-      AMI: ami-0a3c3a20c09d6f377 # Amazon Linux 2023
+      AMI: ami-0a3c3a20c09d6f377 # Amazon Linux 2023 (July 2023)
     eu-west-1:
-      AMI: ami-0694d931cee176e7d # Amazon Linux 2023
+      AMI: ami-0694d931cee176e7d # Amazon Linux 2023 (July 2023)
     eu-west-2:
-      AMI: ami-0505148b3591e4c07 # Amazon Linux 2023
+      AMI: ami-0505148b3591e4c07 # Amazon Linux 2023 (July 2023)
     eu-central-1:
-      AMI: ami-0faab6bdbac9486fb # Amazon Linux 2023
+      AMI: ami-0faab6bdbac9486fb # Amazon Linux 2023 (July 2023)
     ap-northeast-1:
-      AMI: ami-0ab0bbbd329f565e6 # Amazon Linux 2023
+      AMI: ami-0ab0bbbd329f565e6 # Amazon Linux 2023 (July 2023)
     ap-northeast-2:
-      AMI: ami-0e9bfdb247cc8de84 # Amazon Linux 2023
+      AMI: ami-0e9bfdb247cc8de84 # Amazon Linux 2023 (July 2023)
     ap-southeast-1:
-      AMI: ami-078c1149d8ad719a7 # Amazon Linux 2023
+      AMI: ami-078c1149d8ad719a7 # Amazon Linux 2023 (July 2023)
     ap-southeast-2:
-      AMI: ami-0310483fb2b488153 # Amazon Linux 2023
+      AMI: ami-0310483fb2b488153 # Amazon Linux 2023 (July 2023)
     ap-south-1:
-      AMI: ami-0a0f1259dd1c90938 # Amazon Linux 2023
+      AMI: ami-0a0f1259dd1c90938 # Amazon Linux 2023 (July 2023)
     sa-east-1:
-      AMI: ami-0af6e9042ea5a4e3e # Amazon Linux 2023
+      AMI: ami-0af6e9042ea5a4e3e # Amazon Linux 2023 (July 2023)
     ca-central-1:
-      AMI: ami-0a2e7efb4257c0907 # Amazon Linux 2023
+      AMI: ami-0a2e7efb4257c0907 # Amazon Linux 2023 (July 2023)
 
 Conditions:
   IsProvisionedMSK: !Equals [!Ref MSKClusterType, 'Provisioned']
@@ -309,7 +304,7 @@ Resources:
     Condition: IsProvisionedMSK
     DependsOn: MSKClusterProvisioned
     Properties:
-      InstanceType: c6a.8xlarge  # C-class 8XL instance as requested
+      InstanceType: t3.medium
       ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
       KeyName: !Ref KeyPair
       IamInstanceProfile: !Ref EC2InstanceProfile
@@ -322,7 +317,7 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
-            VolumeSize: 100  # Increased volume size for larger instance
+            VolumeSize: 20
             VolumeType: gp3
       UserData:
         Fn::Base64: !Sub |
@@ -345,18 +340,10 @@ Resources:
           unzip awscliv2.zip
           ./aws/install
           
-          # Download setup script and substitute parameter values
-          aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /home/ec2-user/setup-script.sh
-          
-          # Replace placeholders with actual parameter values
-          sed -i 's/STACK_NAME_PLACEHOLDER/${AWS::StackName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's/KAFKA_TOPIC_NAME_PLACEHOLDER/${KafkaTopicName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_REPO_URL_PLACEHOLDER|${GitHubRepoURL}|g' /home/ec2-user/setup-script.sh
-          sed -i 's/AWS_REGION_PLACEHOLDER/${AWS::Region}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_PROJECT_PATH_PLACEHOLDER|${GitHubProjectPath}|g' /home/ec2-user/setup-script.sh
-          
-          chmod +x /home/ec2-user/setup-script.sh
-          /home/ec2-user/setup-script.sh
+          # Download and run setup script
+          aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /tmp/setup-script.sh
+          chmod +x /tmp/setup-script.sh
+          /tmp/setup-script.sh ${AWS::StackName} ${KafkaTopicName} ${GitHubRepoURL} ${AWS::Region}
           
           # Signal completion
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2InstanceProvisioned --region ${AWS::Region}
@@ -365,8 +352,6 @@ Resources:
           Value: !Sub ${EnvironmentName}-DevInstance
         - Key: OS
           Value: "Amazon Linux 2023"
-        - Key: InstanceClass
-          Value: "C-class 8XL (c6a.8xlarge)"
 
   # EC2 Development Instance for Serverless MSK
   EC2InstanceServerless:
@@ -374,7 +359,7 @@ Resources:
     Condition: IsServerlessMSK
     DependsOn: MSKClusterServerless
     Properties:
-      InstanceType: c6a.8xlarge  # C-class 8XL instance as requested
+      InstanceType: t3.medium
       ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
       KeyName: !Ref KeyPair
       IamInstanceProfile: !Ref EC2InstanceProfile
@@ -387,7 +372,7 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
-            VolumeSize: 100  # Increased volume size for larger instance
+            VolumeSize: 20
             VolumeType: gp3
       UserData:
         Fn::Base64: !Sub |
@@ -410,18 +395,10 @@ Resources:
           unzip awscliv2.zip
           ./aws/install
           
-          # Download setup script and substitute parameter values
-          aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /home/ec2-user/setup-script.sh
-          
-          # Replace placeholders with actual parameter values
-          sed -i 's/STACK_NAME_PLACEHOLDER/${AWS::StackName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's/KAFKA_TOPIC_NAME_PLACEHOLDER/${KafkaTopicName}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_REPO_URL_PLACEHOLDER|${GitHubRepoURL}|g' /home/ec2-user/setup-script.sh
-          sed -i 's/AWS_REGION_PLACEHOLDER/${AWS::Region}/g' /home/ec2-user/setup-script.sh
-          sed -i 's|GITHUB_PROJECT_PATH_PLACEHOLDER|${GitHubProjectPath}|g' /home/ec2-user/setup-script.sh
-          
-          chmod +x /home/ec2-user/setup-script.sh
-          /home/ec2-user/setup-script.sh
+          # Download and run setup script
+          aws s3 cp s3://${SetupScriptS3Bucket}/${SetupScriptS3Key} /tmp/setup-script.sh
+          chmod +x /tmp/setup-script.sh
+          /tmp/setup-script.sh ${AWS::StackName} ${KafkaTopicName} ${GitHubRepoURL} ${AWS::Region}
           
           # Signal completion
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2InstanceServerless --region ${AWS::Region}
@@ -430,8 +407,6 @@ Resources:
           Value: !Sub ${EnvironmentName}-DevInstance
         - Key: OS
           Value: "Amazon Linux 2023"
-        - Key: InstanceClass
-          Value: "C-class 8XL (c6a.8xlarge)"
 
 Outputs:
   VPCId:
@@ -457,7 +432,3 @@ Outputs:
   OperatingSystem:
     Description: Operating System of the EC2 Instance
     Value: "Amazon Linux 2023"
-    
-  InstanceType:
-    Description: EC2 Instance Type
-    Value: "c6a.8xlarge (C-class 8XL)"

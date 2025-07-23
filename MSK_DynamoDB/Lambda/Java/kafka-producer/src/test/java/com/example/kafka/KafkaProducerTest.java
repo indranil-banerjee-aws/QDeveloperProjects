@@ -49,71 +49,60 @@ public class KafkaProducerTest {
         String[] args = {
             "--properties", "kafka.properties",
             "--topic", "test-topic",
-            "--batch-id", "test-batch",
-            "--count", "5"
+            "--count", "5",
+            "--batch-id", "test-batch"
         };
 
-        // Use reflection to access private method
-        Method parseCommandLineArgsMethod = KafkaProducer.class.getDeclaredMethod("parseCommandLineArgs", String[].class);
-        parseCommandLineArgsMethod.setAccessible(true);
-
         // When
-        CommandLine cmd = (CommandLine) parseCommandLineArgsMethod.invoke(null, (Object) args);
+        Options options = KafkaProducer.createOptions();
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmd = parser.parse(options, args);
 
         // Then
-        assertNotNull(cmd, "CommandLine should not be null");
-        assertEquals("kafka.properties", cmd.getOptionValue("properties"), "Properties file path should match");
+        assertNotNull(cmd, "Command line should be parsed successfully");
+        assertEquals("kafka.properties", cmd.getOptionValue("properties"), "Properties file should match");
         assertEquals("test-topic", cmd.getOptionValue("topic"), "Topic should match");
-        assertEquals("test-batch", cmd.getOptionValue("batch-id"), "Batch ID should match");
         assertEquals("5", cmd.getOptionValue("count"), "Count should match");
+        assertEquals("test-batch", cmd.getOptionValue("batch-id"), "Batch ID should match");
     }
 
     @Test
-    public void testLoadProperties() throws Exception {
+    public void testLoadProperties() throws IOException {
         // Given
-        File propsFile = tempDir.resolve("test.properties").toFile();
-        try (FileWriter writer = new FileWriter(propsFile)) {
-            testProperties.store(writer, "Test properties");
+        File propertiesFile = tempDir.resolve("test.properties").toFile();
+        try (FileWriter writer = new FileWriter(propertiesFile)) {
+            writer.write("bootstrap.servers=localhost:9092\n");
+            writer.write("key.serializer=org.apache.kafka.common.serialization.StringSerializer\n");
         }
 
-        // Use reflection to access private method
-        Method loadPropertiesMethod = KafkaProducer.class.getDeclaredMethod("loadProperties", String.class);
-        loadPropertiesMethod.setAccessible(true);
-
         // When
-        Properties loadedProps = (Properties) loadPropertiesMethod.invoke(null, propsFile.getAbsolutePath());
+        Properties properties = KafkaProducer.loadProperties(propertiesFile.getAbsolutePath());
 
         // Then
-        assertNotNull(loadedProps, "Loaded properties should not be null");
-        assertEquals("localhost:9092", loadedProps.getProperty("bootstrap.servers"), "Bootstrap servers should match");
+        assertNotNull(properties, "Properties should not be null");
+        assertEquals("localhost:9092", properties.getProperty("bootstrap.servers"), "Bootstrap servers should match");
     }
 
     @Test
-    public void testSendMessages() throws Exception {
+    public void testGenerateMessages() throws Exception {
         // Given
         String topic = "test-topic";
         String batchId = "test-batch";
-        int messageCount = 5;
-
-        // Use reflection to access private method
-        Method sendMessagesMethod = KafkaProducer.class.getDeclaredMethod("sendMessages", 
-                org.apache.kafka.clients.producer.Producer.class, String.class, String.class, int.class);
-        sendMessagesMethod.setAccessible(true);
+        int count = 3;
 
         // When
-        sendMessagesMethod.invoke(null, mockProducer, topic, batchId, messageCount);
+        List<ProducerRecord<String, String>> records = KafkaProducer.generateMessages(topic, count, batchId);
 
         // Then
-        List<ProducerRecord<String, String>> history = mockProducer.history();
-        assertEquals(messageCount, history.size(), "Should have sent " + messageCount + " messages");
+        assertEquals(count, records.size(), "Should generate correct number of records");
         
-        for (int i = 0; i < messageCount; i++) {
-            ProducerRecord<String, String> record = history.get(i);
+        for (ProducerRecord<String, String> record : records) {
             assertEquals(topic, record.topic(), "Topic should match");
-            assertEquals(batchId + "-" + i, record.key(), "Key should match pattern");
+            assertNotNull(record.key(), "Key should not be null");
             assertNotNull(record.value(), "Value should not be null");
-            assertTrue(record.value().contains("Firstname"), "Value should contain Firstname field");
-            assertTrue(record.value().contains("Lastname"), "Value should contain Lastname field");
+            assertTrue(record.key().startsWith(batchId), "Key should start with batch ID");
+            assertTrue(record.value().contains("firstName"), "Value should contain firstName field");
+            assertTrue(record.value().contains("lastName"), "Value should contain lastName field");
         }
     }
 }

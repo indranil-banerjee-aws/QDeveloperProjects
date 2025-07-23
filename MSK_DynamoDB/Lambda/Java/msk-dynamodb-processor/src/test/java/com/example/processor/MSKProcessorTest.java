@@ -112,7 +112,7 @@ public class MSKProcessorTest {
         record1.setTimestamp(System.currentTimeMillis());
         record1.setKey(Base64.getEncoder().encodeToString("test-batch-0".getBytes(StandardCharsets.UTF_8)));
         record1.setValue(Base64.getEncoder().encodeToString(
-                "{\"Firstname\":\"John\",\"Lastname\":\"Doe\",\"StreetAddress\":\"123 Main St\",\"City\":\"Anytown\",\"State\":\"CA\",\"County\":\"Any County\",\"ZipCode\":\"12345\",\"PhoneNumber\":\"555-123-4567\",\"EmailAddress\":\"john.doe@example.com\",\"EmployerName\":\"ACME Inc\",\"EmployerAddress\":\"456 Business Ave\",\"EmployerPhoneNumber\":\"555-987-6543\",\"EmployerWebsite\":\"www.acme.com\"}"
+                "{\"Firstname\":\"John\",\"Lastname\":\"Doe\",\"StreetAddress\":\"123 Main St\",\"City\":\"Anytown\",\"State\":\"CA\",\"ZipCode\":\"12345\",\"PhoneNumber\":\"555-123-4567\",\"EmailAddress\":\"john.doe@example.com\",\"EmployerName\":\"ACME Inc\",\"EmployerAddress\":\"456 Business Ave\",\"EmployerPhoneNumber\":\"555-987-6543\",\"EmployerWebsite\":\"www.acme.com\"}"
                         .getBytes(StandardCharsets.UTF_8)));
 
         KafkaEvent.KafkaEventRecord record2 = new KafkaEvent.KafkaEventRecord();
@@ -122,7 +122,7 @@ public class MSKProcessorTest {
         record2.setTimestamp(System.currentTimeMillis());
         record2.setKey(Base64.getEncoder().encodeToString("test-batch-1".getBytes(StandardCharsets.UTF_8)));
         record2.setValue(Base64.getEncoder().encodeToString(
-                "{\"Firstname\":\"Jane\",\"Lastname\":\"Smith\",\"StreetAddress\":\"789 Oak St\",\"City\":\"Othertown\",\"State\":\"NY\",\"County\":\"Other County\",\"ZipCode\":\"67890\",\"PhoneNumber\":\"555-987-6543\",\"EmailAddress\":\"jane.smith@example.com\",\"EmployerName\":\"XYZ Corp\",\"EmployerAddress\":\"321 Corporate Blvd\",\"EmployerPhoneNumber\":\"555-123-4567\",\"EmployerWebsite\":\"www.xyz.com\"}"
+                "{\"Firstname\":\"Jane\",\"Lastname\":\"Smith\",\"StreetAddress\":\"789 Oak St\",\"City\":\"Othertown\",\"State\":\"NY\",\"ZipCode\":\"67890\",\"PhoneNumber\":\"555-987-6543\",\"EmailAddress\":\"jane.smith@example.com\",\"EmployerName\":\"XYZ Corp\",\"EmployerAddress\":\"321 Corporate Blvd\",\"EmployerPhoneNumber\":\"555-123-4567\",\"EmployerWebsite\":\"www.xyz.com\"}"
                         .getBytes(StandardCharsets.UTF_8)));
 
         // Add records to the event
