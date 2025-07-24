@@ -1,0 +1,758 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'MSK to DynamoDB Environment - Using c6a.8xlarge with Amazon Linux 2023 - FIXED VERSION'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name - used for resource naming
+    Type: String
+    Default: MSKEnvironment
+    
+  KafkaTopicName:
+    Description: Name of the Kafka topic to create
+    Type: String
+    Default: person-data
+    
+  MSKClusterType:
+    Description: Type of MSK cluster to deploy (Provisioned or Serverless)
+    Type: String
+    Default: Provisioned
+    AllowedValues:
+      - Provisioned
+      - Serverless
+      
+  GitHubRepoURL:
+    Description: URL of the GitHub repository to clone
+    Type: String
+    Default: https://github.com/yourusername/msk-dynamodb-project.git
+    
+  GitHubProjectPath:
+    Description: Path to the project within the GitHub repository
+    Type: String
+    Default: MSK_DynamoDB/Lambda/Java
+    
+  SetupScriptS3Bucket:
+    Description: S3 bucket containing the setup script
+    Type: String
+    
+  SetupScriptS3Key:
+    Description: S3 key for the setup script
+    Type: String
+    Default: setup-msk-environment.sh
+
+Mappings:
+  # Updated Amazon Linux 2023 AMI IDs as of July 2023
+  RegionMap:
+    us-east-1:
+      AMI: ami-05c13eab67c5d8861 # Amazon Linux 2023
+    us-east-2:
+      AMI: ami-0e0bf53f6def86294 # Amazon Linux 2023
+    us-west-1:
+      AMI: ami-0ce2cb35386fc22e9 # Amazon Linux 2023
+    us-west-2:
+      AMI: ami-0a3c3a20c09d6f377 # Amazon Linux 2023
+    eu-west-1:
+      AMI: ami-0694d931cee176e7d # Amazon Linux 2023
+    eu-west-2:
+      AMI: ami-0505148b3591e4c07 # Amazon Linux 2023
+    eu-central-1:
+      AMI: ami-0faab6bdbac9486fb # Amazon Linux 2023
+    ap-northeast-1:
+      AMI: ami-0ab0bbbd329f565e6 # Amazon Linux 2023
+    ap-northeast-2:
+      AMI: ami-0e9bfdb247cc8de84 # Amazon Linux 2023
+    ap-southeast-1:
+      AMI: ami-078c1149d8ad719a7 # Amazon Linux 2023
+    ap-southeast-2:
+      AMI: ami-0310483fb2b488153 # Amazon Linux 2023
+    ap-south-1:
+      AMI: ami-0a0f1259dd1c90938 # Amazon Linux 2023
+    sa-east-1:
+      AMI: ami-0af6e9042ea5a4e3e # Amazon Linux 2023
+    ca-central-1:
+      AMI: ami-0a2e7efb4257c0907 # Amazon Linux 2023
+
+Conditions:
+  IsProvisionedMSK: !Equals [!Ref MSKClusterType, 'Provisioned']
+  IsServerlessMSK: !Equals [!Ref MSKClusterType, 'Serverless']
+
+Resources:
+  # VPC and Networking Resources
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-IGW
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PublicSubnet2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PrivateSubnet1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PrivateSubnet2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PublicRouteTable
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-PrivateRouteTable
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  # MSK Security Group
+  MSKSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for MSK cluster
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 9092
+          ToPort: 9098
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-MSKSecurityGroup
+
+  # EC2 Security Group
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EC2 development instance
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2SecurityGroup
+
+  # MSK Cluster - Provisioned with FIXED VPC Connectivity
+  MSKClusterProvisioned:
+    Type: AWS::MSK::Cluster
+    Condition: IsProvisionedMSK
+    Properties:
+      ClusterName: !Sub ${EnvironmentName}-MSKCluster
+      KafkaVersion: 3.4.0
+      NumberOfBrokerNodes: 2
+      EnhancedMonitoring: PER_BROKER
+      EncryptionInfo:
+        EncryptionInTransit:
+          ClientBroker: TLS
+          InCluster: true
+      ClientAuthentication:
+        Sasl:
+          Iam:
+            Enabled: true
+      BrokerNodeGroupInfo:
+        InstanceType: kafka.t3.small
+        ClientSubnets:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+        SecurityGroups:
+          - !Ref MSKSecurityGroup
+        StorageInfo:
+          EBSStorageInfo:
+            VolumeSize: 10
+        # FIXED: Added VPC Connectivity Configuration
+        ConnectivityInfo:
+          VpcConnectivity:
+            ClientAuthentication:
+              Sasl:
+                Iam:
+                  Enabled: true
+      Tags:
+        Name: !Sub ${EnvironmentName}-MSKCluster
+
+  MSKClusterServerless:
+    Type: AWS::MSK::ServerlessCluster
+    Condition: IsServerlessMSK
+    Properties:
+      ClusterName: !Sub ${EnvironmentName}-MSKServerlessCluster
+      ClientAuthentication:
+        Sasl:
+          Iam:
+            Enabled: true
+      VpcConfigs:
+        - SubnetIds:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - !Ref MSKSecurityGroup
+      Tags:
+        Name: !Sub ${EnvironmentName}-MSKServerlessCluster
+
+  # EC2 Instance Role
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonMSKFullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AWSLambda_FullAccess
+        - arn:aws:iam::aws:policy/IAMFullAccess
+      Path: /
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EC2InstanceRole
+
+  # Key Pair for EC2 Instance
+  KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub ${EnvironmentName}-KeyPair
+
+  # EC2 Development Instance for Provisioned MSK
+  EC2InstanceProvisioned:
+    Type: AWS::EC2::Instance
+    Condition: IsProvisionedMSK
+    DependsOn: MSKClusterProvisioned
+    Properties:
+      InstanceType: c6a.8xlarge  # C-class 8XL instance as requested
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      KeyName: !Ref KeyPair
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref EC2SecurityGroup
+          SubnetId: !Ref PublicSubnet1
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 100  # Increased volume size for larger instance
+            VolumeType: gp3
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          
+          # Verify we're running Amazon Linux 2023
+          if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            echo "Running OS: $NAME $VERSION_ID"
+          fi
+          
+          # Update system
+          dnf update -y
+          
+          # Install development tools
+          dnf install -y git maven java-17-amazon-corretto-devel jq
+          
+          # Install AWS CLI v2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+          
+          # Create comprehensive setup script
+          cat > /home/ec2-user/setup-msk-environment.sh << 'SETUP_SCRIPT_EOF'
+          #!/bin/bash
+          
+          # MSK to DynamoDB Environment Setup Script
+          # This script sets up the complete environment
+          
+          set -e  # Exit on any error
+          
+          STACK_NAME="${AWS::StackName}"
+          KAFKA_TOPIC_NAME="${KafkaTopicName}"
+          GITHUB_REPO_URL="${GitHubRepoURL}"
+          AWS_REGION="${AWS::Region}"
+          GITHUB_PROJECT_PATH="${GitHubProjectPath}"
+          
+          log_message() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+          }
+          
+          log_message "Starting MSK to DynamoDB environment setup..."
+          
+          # Get MSK cluster ARN from CloudFormation
+          log_message "Getting MSK cluster ARN from CloudFormation..."
+          MSK_CLUSTER_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --query "Stacks[0].Outputs[?OutputKey=='MSKClusterArn'].OutputValue" --output text)
+          
+          if [ -z "$MSK_CLUSTER_ARN" ]; then
+            log_message "ERROR: Failed to get MSK cluster ARN from CloudFormation"
+            exit 1
+          fi
+          
+          log_message "MSK Cluster ARN: $MSK_CLUSTER_ARN"
+          
+          # Get bootstrap servers for the MSK cluster
+          log_message "Getting bootstrap servers for the MSK cluster..."
+          BOOTSTRAP_SERVERS=$(aws kafka get-bootstrap-brokers --cluster-arn "$MSK_CLUSTER_ARN" --region $AWS_REGION --query "BootstrapBrokerStringSaslIam" --output text)
+          
+          if [ -z "$BOOTSTRAP_SERVERS" ]; then
+            log_message "ERROR: Failed to get bootstrap servers for the MSK cluster"
+            exit 1
+          fi
+          
+          log_message "Bootstrap Servers: $BOOTSTRAP_SERVERS"
+          
+          # Install Kafka client tools
+          log_message "Installing Kafka client tools..."
+          cd /home/ec2-user
+          KAFKA_VERSION=2.8.1
+          SCALA_VERSION=2.13
+          KAFKA_DIR=kafka_${SCALA_VERSION}-${KAFKA_VERSION}
+          KAFKA_TAR=${KAFKA_DIR}.tgz
+          
+          if [ ! -d $KAFKA_DIR ]; then
+            log_message "Downloading Kafka client tools..."
+            wget -q https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/${KAFKA_TAR}
+            log_message "Extracting Kafka client tools..."
+            tar -xzf $KAFKA_TAR
+            rm -f $KAFKA_TAR
+          fi
+          
+          # Set up MSK IAM authentication
+          log_message "Setting up MSK IAM authentication..."
+          MSK_IAM_AUTH_DIR=/home/ec2-user/msk-iam-auth
+          mkdir -p $MSK_IAM_AUTH_DIR
+          cd $MSK_IAM_AUTH_DIR
+          
+          if [ ! -f aws-msk-iam-auth-1.1.5-all.jar ]; then
+            log_message "Downloading MSK IAM authentication JAR..."
+            wget -q https://github.com/aws/aws-msk-iam-auth/releases/download/v1.1.5/aws-msk-iam-auth-1.1.5-all.jar
+          fi
+          
+          # Set up environment
+          cd /home/ec2-user/$KAFKA_DIR
+          export CLASSPATH=/home/ec2-user/msk-iam-auth/aws-msk-iam-auth-1.1.5-all.jar
+          export AWS_DEFAULT_REGION=$AWS_REGION
+          
+          # Create client properties for IAM authentication
+          cat > client.properties << EOT
+          security.protocol=SASL_SSL
+          sasl.mechanism=AWS_MSK_IAM
+          sasl.jaas.config=software.amazon.msk.auth.iam.IAMLoginModule required;
+          sasl.client.callback.handler.class=software.amazon.msk.auth.iam.IAMClientCallbackHandler
+          EOT
+          
+          # Create the Kafka topic
+          log_message "Creating Kafka topic: $KAFKA_TOPIC_NAME..."
+          bin/kafka-topics.sh --create \
+            --bootstrap-server $BOOTSTRAP_SERVERS \
+            --command-config client.properties \
+            --replication-factor 2 \
+            --partitions 3 \
+            --topic $KAFKA_TOPIC_NAME || log_message "Topic may already exist, continuing..."
+          
+          # List topics to verify
+          log_message "Listing Kafka topics:"
+          bin/kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVERS --command-config client.properties
+          
+          # Create DynamoDB table
+          log_message "Creating DynamoDB table: PersonData..."
+          aws dynamodb create-table \
+            --table-name PersonData \
+            --attribute-definitions AttributeName=id,AttributeType=S \
+            --key-schema AttributeName=id,KeyType=HASH \
+            --billing-mode PAY_PER_REQUEST \
+            --region $AWS_REGION || log_message "Table may already exist, continuing..."
+          
+          # Set up project directory
+          log_message "Setting up project directory..."
+          mkdir -p /home/ec2-user/project
+          cd /home/ec2-user/project
+          
+          log_message "Cloning repository: $GITHUB_REPO_URL"
+          if [ ! -d .git ]; then
+            git clone $GITHUB_REPO_URL .
+          fi
+          
+          if [ -d $GITHUB_PROJECT_PATH ]; then
+            cd $GITHUB_PROJECT_PATH
+            log_message "Navigated to project path: $GITHUB_PROJECT_PATH"
+            
+            # Update Kafka producer properties with correct bootstrap servers
+            if [ -f kafka-producer/kafka-client.properties ]; then
+              log_message "Updating Kafka producer properties..."
+              sed -i "s|bootstrap.servers=.*|bootstrap.servers=$BOOTSTRAP_SERVERS|g" kafka-producer/kafka-client.properties
+            fi
+          fi
+          
+          # Set file ownership
+          log_message "Setting file ownership..."
+          chown -R ec2-user:ec2-user /home/ec2-user/project
+          chown -R ec2-user:ec2-user /home/ec2-user/$KAFKA_DIR
+          chown -R ec2-user:ec2-user /home/ec2-user/msk-iam-auth
+          
+          log_message "Setup completed successfully!"
+          log_message "Summary:"
+          log_message "- MSK Cluster ARN: $MSK_CLUSTER_ARN"
+          log_message "- Kafka Topic: $KAFKA_TOPIC_NAME"
+          log_message "- Bootstrap Servers: $BOOTSTRAP_SERVERS"
+          log_message "- DynamoDB Table: PersonData"
+          log_message "- Kafka Client Tools: /home/ec2-user/$KAFKA_DIR"
+          log_message "- Project Path: /home/ec2-user/project/$GITHUB_PROJECT_PATH"
+          log_message ""
+          log_message "To run the Kafka producer:"
+          log_message "  cd ~/project/$GITHUB_PROJECT_PATH/kafka-producer"
+          log_message "  ./run.sh $KAFKA_TOPIC_NAME 100 batch-001"
+          log_message ""
+          log_message "To deploy the Lambda function:"
+          log_message "  cd ~/project/$GITHUB_PROJECT_PATH/msk-dynamodb-processor"
+          log_message "  sam deploy --guided"
+          
+          SETUP_SCRIPT_EOF
+          
+          chmod +x /home/ec2-user/setup-msk-environment.sh
+          chown ec2-user:ec2-user /home/ec2-user/setup-msk-environment.sh
+          
+          # Run the setup script
+          sudo -u ec2-user /home/ec2-user/setup-msk-environment.sh
+          
+          # Signal completion
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2InstanceProvisioned --region ${AWS::Region}
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-DevInstance
+        - Key: OS
+          Value: "Amazon Linux 2023"
+        - Key: InstanceClass
+          Value: "C-class 8XL (c6a.8xlarge)"
+
+  # EC2 Development Instance for Serverless MSK
+  EC2InstanceServerless:
+    Type: AWS::EC2::Instance
+    Condition: IsServerlessMSK
+    DependsOn: MSKClusterServerless
+    Properties:
+      InstanceType: c6a.8xlarge  # C-class 8XL instance as requested
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      KeyName: !Ref KeyPair
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref EC2SecurityGroup
+          SubnetId: !Ref PublicSubnet1
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 100  # Increased volume size for larger instance
+            VolumeType: gp3
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          
+          # Verify we're running Amazon Linux 2023
+          if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            echo "Running OS: $NAME $VERSION_ID"
+          fi
+          
+          # Update system
+          dnf update -y
+          
+          # Install development tools
+          dnf install -y git maven java-17-amazon-corretto-devel jq
+          
+          # Install AWS CLI v2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+          
+          # Create comprehensive setup script (same as provisioned)
+          cat > /home/ec2-user/setup-msk-environment.sh << 'SETUP_SCRIPT_EOF'
+          #!/bin/bash
+          
+          # MSK to DynamoDB Environment Setup Script
+          # This script sets up the complete environment
+          
+          set -e  # Exit on any error
+          
+          STACK_NAME="${AWS::StackName}"
+          KAFKA_TOPIC_NAME="${KafkaTopicName}"
+          GITHUB_REPO_URL="${GitHubRepoURL}"
+          AWS_REGION="${AWS::Region}"
+          GITHUB_PROJECT_PATH="${GitHubProjectPath}"
+          
+          log_message() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+          }
+          
+          log_message "Starting MSK to DynamoDB environment setup..."
+          
+          # Get MSK cluster ARN from CloudFormation
+          log_message "Getting MSK cluster ARN from CloudFormation..."
+          MSK_CLUSTER_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --query "Stacks[0].Outputs[?OutputKey=='MSKClusterArn'].OutputValue" --output text)
+          
+          if [ -z "$MSK_CLUSTER_ARN" ]; then
+            log_message "ERROR: Failed to get MSK cluster ARN from CloudFormation"
+            exit 1
+          fi
+          
+          log_message "MSK Cluster ARN: $MSK_CLUSTER_ARN"
+          
+          # Get bootstrap servers for the MSK cluster
+          log_message "Getting bootstrap servers for the MSK cluster..."
+          BOOTSTRAP_SERVERS=$(aws kafka get-bootstrap-brokers --cluster-arn "$MSK_CLUSTER_ARN" --region $AWS_REGION --query "BootstrapBrokerStringSaslIam" --output text)
+          
+          if [ -z "$BOOTSTRAP_SERVERS" ]; then
+            log_message "ERROR: Failed to get bootstrap servers for the MSK cluster"
+            exit 1
+          fi
+          
+          log_message "Bootstrap Servers: $BOOTSTRAP_SERVERS"
+          
+          # Install Kafka client tools
+          log_message "Installing Kafka client tools..."
+          cd /home/ec2-user
+          KAFKA_VERSION=2.8.1
+          SCALA_VERSION=2.13
+          KAFKA_DIR=kafka_${SCALA_VERSION}-${KAFKA_VERSION}
+          KAFKA_TAR=${KAFKA_DIR}.tgz
+          
+          if [ ! -d $KAFKA_DIR ]; then
+            log_message "Downloading Kafka client tools..."
+            wget -q https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/${KAFKA_TAR}
+            log_message "Extracting Kafka client tools..."
+            tar -xzf $KAFKA_TAR
+            rm -f $KAFKA_TAR
+          fi
+          
+          # Set up MSK IAM authentication
+          log_message "Setting up MSK IAM authentication..."
+          MSK_IAM_AUTH_DIR=/home/ec2-user/msk-iam-auth
+          mkdir -p $MSK_IAM_AUTH_DIR
+          cd $MSK_IAM_AUTH_DIR
+          
+          if [ ! -f aws-msk-iam-auth-1.1.5-all.jar ]; then
+            log_message "Downloading MSK IAM authentication JAR..."
+            wget -q https://github.com/aws/aws-msk-iam-auth/releases/download/v1.1.5/aws-msk-iam-auth-1.1.5-all.jar
+          fi
+          
+          # Set up environment
+          cd /home/ec2-user/$KAFKA_DIR
+          export CLASSPATH=/home/ec2-user/msk-iam-auth/aws-msk-iam-auth-1.1.5-all.jar
+          export AWS_DEFAULT_REGION=$AWS_REGION
+          
+          # Create client properties for IAM authentication
+          cat > client.properties << EOT
+          security.protocol=SASL_SSL
+          sasl.mechanism=AWS_MSK_IAM
+          sasl.jaas.config=software.amazon.msk.auth.iam.IAMLoginModule required;
+          sasl.client.callback.handler.class=software.amazon.msk.auth.iam.IAMClientCallbackHandler
+          EOT
+          
+          # Create the Kafka topic
+          log_message "Creating Kafka topic: $KAFKA_TOPIC_NAME..."
+          bin/kafka-topics.sh --create \
+            --bootstrap-server $BOOTSTRAP_SERVERS \
+            --command-config client.properties \
+            --replication-factor 2 \
+            --partitions 3 \
+            --topic $KAFKA_TOPIC_NAME || log_message "Topic may already exist, continuing..."
+          
+          # List topics to verify
+          log_message "Listing Kafka topics:"
+          bin/kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVERS --command-config client.properties
+          
+          # Create DynamoDB table
+          log_message "Creating DynamoDB table: PersonData..."
+          aws dynamodb create-table \
+            --table-name PersonData \
+            --attribute-definitions AttributeName=id,AttributeType=S \
+            --key-schema AttributeName=id,KeyType=HASH \
+            --billing-mode PAY_PER_REQUEST \
+            --region $AWS_REGION || log_message "Table may already exist, continuing..."
+          
+          # Set up project directory
+          log_message "Setting up project directory..."
+          mkdir -p /home/ec2-user/project
+          cd /home/ec2-user/project
+          
+          log_message "Cloning repository: $GITHUB_REPO_URL"
+          if [ ! -d .git ]; then
+            git clone $GITHUB_REPO_URL .
+          fi
+          
+          if [ -d $GITHUB_PROJECT_PATH ]; then
+            cd $GITHUB_PROJECT_PATH
+            log_message "Navigated to project path: $GITHUB_PROJECT_PATH"
+            
+            # Update Kafka producer properties with correct bootstrap servers
+            if [ -f kafka-producer/kafka-client.properties ]; then
+              log_message "Updating Kafka producer properties..."
+              sed -i "s|bootstrap.servers=.*|bootstrap.servers=$BOOTSTRAP_SERVERS|g" kafka-producer/kafka-client.properties
+            fi
+          fi
+          
+          # Set file ownership
+          log_message "Setting file ownership..."
+          chown -R ec2-user:ec2-user /home/ec2-user/project
+          chown -R ec2-user:ec2-user /home/ec2-user/$KAFKA_DIR
+          chown -R ec2-user:ec2-user /home/ec2-user/msk-iam-auth
+          
+          log_message "Setup completed successfully!"
+          log_message "Summary:"
+          log_message "- MSK Cluster ARN: $MSK_CLUSTER_ARN"
+          log_message "- Kafka Topic: $KAFKA_TOPIC_NAME"
+          log_message "- Bootstrap Servers: $BOOTSTRAP_SERVERS"
+          log_message "- DynamoDB Table: PersonData"
+          log_message "- Kafka Client Tools: /home/ec2-user/$KAFKA_DIR"
+          log_message "- Project Path: /home/ec2-user/project/$GITHUB_PROJECT_PATH"
+          log_message ""
+          log_message "To run the Kafka producer:"
+          log_message "  cd ~/project/$GITHUB_PROJECT_PATH/kafka-producer"
+          log_message "  ./run.sh $KAFKA_TOPIC_NAME 100 batch-001"
+          log_message ""
+          log_message "To deploy the Lambda function:"
+          log_message "  cd ~/project/$GITHUB_PROJECT_PATH/msk-dynamodb-processor"
+          log_message "  sam deploy --guided"
+          
+          SETUP_SCRIPT_EOF
+          
+          chmod +x /home/ec2-user/setup-msk-environment.sh
+          chown ec2-user:ec2-user /home/ec2-user/setup-msk-environment.sh
+          
+          # Run the setup script
+          sudo -u ec2-user /home/ec2-user/setup-msk-environment.sh
+          
+          # Signal completion
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2InstanceServerless --region ${AWS::Region}
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-DevInstance
+        - Key: OS
+          Value: "Amazon Linux 2023"
+        - Key: InstanceClass
+          Value: "C-class 8XL (c6a.8xlarge)"
+
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    
+  MSKClusterArn:
+    Description: ARN of the MSK Cluster
+    Value: !If [IsProvisionedMSK, !Ref MSKClusterProvisioned, !Ref MSKClusterServerless]
+    
+  EC2InstanceId:
+    Description: EC2 Instance ID
+    Value: !If [IsProvisionedMSK, !Ref EC2InstanceProvisioned, !Ref EC2InstanceServerless]
+    
+  EC2PublicIP:
+    Description: Public IP of the EC2 Instance
+    Value: !If [IsProvisionedMSK, !GetAtt EC2InstanceProvisioned.PublicIp, !GetAtt EC2InstanceServerless.PublicIp]
+    
+  KeyPairName:
+    Description: Name of the Key Pair for SSH access
+    Value: !Ref KeyPair
+    
+  OperatingSystem:
+    Description: Operating System of the EC2 Instance
+    Value: "Amazon Linux 2023"
+    
+  InstanceType:
+    Description: EC2 Instance Type
+    Value: "c6a.8xlarge (C-class 8XL)"
